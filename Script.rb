@@ -51,7 +51,7 @@
 if defined?(PluginManager) && !PluginManager.installed?("Poké Tetra")
   PluginManager.register({                                                 
     :name    => "Poké Tetra",                                        
-    :version => "1.1",                                                     
+    :version => "1.2",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=360234",
     :credits => ["FL", "Unknown"]
   })
@@ -1228,6 +1228,8 @@ module PokeTetra
 
     MAJOR_VERSION = major_version
 
+    @@random_species_array = nil
+
     def player
       return $Trainer if MAJOR_VERSION < 20
       return $player
@@ -1240,13 +1242,17 @@ module PokeTetra
 
     def random_species
       return rand(PBSpecies.maxValue)+1 if MAJOR_VERSION < 19
-      random_species_array = create_random_species_array_v19_plus
-      return random_species_array[rand(random_species_array.size)]
+      @@random_species_array ||= create_random_species_array_v19_plus
+      return @@random_species_array[rand(@@random_species_array.size)]
     end    
     
     def create_random_species_array_v19_plus
       ret =[]
-      GameData::Species.each_species{ |species| ret.push(species.id)}
+      if MAJOR_VERSION < 20
+        GameData::Species.each{ |species| ret.push(species.id)}
+      else
+        GameData::Species.each_species{ |species| ret.push(species.id)}
+      end
       return ret
     end
 
@@ -1270,20 +1276,29 @@ module PokeTetra
     end
 
     def species_types(species)
-      if MAJOR_VERSION < 19
+      case MAJOR_VERSION
+      when 0..18
         dexdata=pbOpenDexData
         pbDexDataOffset(dexdata,species,8)
         ret = [dexdata.fgetb, dexdata.fgetb]
         ret.pop if !ret[1] || ret[0] == ret[1]
         dexdata.close
         return ret
+      when 19; 
+        ret = [GameData::Species.get(species).type1, GameData::Species.get(species).type2]
+        ret.pop if !ret[1] || ret[0] == ret[1]
+        return ret
+      else
+        return GameData::Species.get(species).types
       end
-      return GameData::Species.get(species).types
     end
 
     def species_count
-      return PBSpecies.getCount if MAJOR_VERSION < 19
-      return GameData::Species.count
+      return case MAJOR_VERSION
+        when 0..18; PBSpecies.getCount
+        when 19;    GameData::Species.keys.count
+        else        GameData::Species.count
+      end
     end
 
     def species_icon_path(species)
@@ -1337,12 +1352,15 @@ module PokeTetra
     end
 
     def type_icon_index(type)
-      return type if MAJOR_VERSION < 19
-      return GameData::Type.get(type).icon_position
+      return case MAJOR_VERSION
+        when 0..18; type
+        when 19;    GameData::Type.get(type).id_number
+        else        GameData::Type.get(type).icon_position
+      end
     end
 
     def add_triad_card(card)
-      if MAJOR_VERSION < 19
+      if MAJOR_VERSION < 20
         $PokemonGlobal.triads.pbStoreItem(card)
         return
       end
@@ -1350,7 +1368,7 @@ module PokeTetra
     end
 
     def remove_triad_card(card)
-      if MAJOR_VERSION < 19
+      if MAJOR_VERSION < 20
         $PokemonGlobal.triads.pbDeleteItem(card)
         return
       end
@@ -1358,24 +1376,26 @@ module PokeTetra
     end
 
     def storage_add_triad_card(items,maxSize,maxPerSlot,item,qty)
-      if MAJOR_VERSION < 19
+      if MAJOR_VERSION < 20
         return ItemStorageHelper.pbStoreItem(items,maxSize,maxPerSlot,item,qty)
       end
       return ItemStorageHelper.add(items, maxSize, maxPerSlot, item, qty)
     end
 
     def storage_remove_triad_card(items,maxSize,item,qty)
-      if MAJOR_VERSION < 19
-        return ItemStorageHelper.pbDeleteItem(items,maxSize,item,qty)
+      return case MAJOR_VERSION
+        when 0..18; return ItemStorageHelper.pbDeleteItem(items,maxSize,item,qty)
+        when 19;    return ItemStorageHelper.pbDeleteItem(items,item,qty)
+        else        ItemStorageHelper.remove(items, item, qty)
       end
-      return ItemStorageHelper.remove(items, item, qty)
     end
 
     def storage_quantity_triad_card(items,maxSize,item)
-      if MAJOR_VERSION < 19
-        return ItemStorageHelper.pbQuantity(items,maxSize,item)
+      return case MAJOR_VERSION
+        when 0..18; return ItemStorageHelper.pbQuantity(items,maxSize,item)
+        when 19;    return ItemStorageHelper.pbQuantity(items,item)
+        else        ItemStorageHelper.quantity(items, item)
       end
-      return ItemStorageHelper.quantity(items, item)
     end
     
     def draw_text_positions(bitmap,textPos)
